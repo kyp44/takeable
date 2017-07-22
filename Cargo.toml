@@ -1,0 +1,19 @@
+[package]
+authors = ["Mathias Svensson <freaken@freaken.dk>"]
+description = "Container type that allows for temporarily moving out of the container."
+documentation = "http://docs.rs/takeable"
+homepage = "https://github.com/Idolf/takeable"
+categories = ["data-structures", "no-std"]
+license = "MIT/Apache-2.0/Unlicense"
+repository = "https://github.com/Idolf/takeable"
+name = "takeable"
+readme = "README.md"
+version = "0.1.0"
+
+[dependencies.unreachable]
+version = "1.0"
+optional = true
+
+[features]
+default = ["microoptimization"]
+microoptimization = ["unreachable"]
