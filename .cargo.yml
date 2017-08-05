@@ -1,8 +1,0 @@
-language: rust
-sudo: false
-
-script:
-    - cargo build
-    - cargo test
-    - cargo test --no-default-features
-    - cargo doc

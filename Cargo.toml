@@ -8,12 +8,4 @@ license = "MIT/Apache-2.0/Unlicense"
 repository = "https://github.com/Idolf/takeable"
 name = "takeable"
 readme = "README.md"
-version = "0.1.0"
-
-[dependencies.unreachable]
-version = "1.0"
-optional = true
-
-[features]
-default = ["microoptimization"]
-microoptimization = ["unreachable"]
+version = "0.2.0"

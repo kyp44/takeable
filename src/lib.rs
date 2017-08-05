@@ -20,51 +20,35 @@
 //!
 //! [take]: https://docs.rs/take_mut/0.1.3/take_mut/fn.take.html
 //! [take_mut]: https://crates.io/crates/take_mut
-//!
-//! To do so effeciently, it uses the [`UncheckedOptionExt`][UncheckedOptionExt] trait from the
-//! [`unreachable`][unreachable] crate. This behavior can be turned off by disabling the
-//! `microoptimizations` feature.  `Option` at a lower performance cost.
-//!
-//! [UncheckedOptionExt]: https://docs.rs/unreachable/1.0.0/unreachable/trait.UncheckedOptionExt.html
-//! [unreachable]: https://crates.io/crates/unreachable
-
 #![no_std]
 
-#![cfg_attr(not(feature = "microoptimization"), deny(unsafe_code))]
-#![deny(missing_docs,
+#![deny(missing_docs, unsafe_code,
         missing_debug_implementations, missing_copy_implementations,
         unstable_features, unused_import_braces, unused_qualifications)]
 
-#[cfg(feature = "microoptimization")]
-extern crate unreachable;
-
 use core::ops::{Deref, DerefMut};
 
-#[cfg(feature = "microoptimization")]
-#[path="unsafe_primitives.rs"]
-mod primitives;
-
-#[cfg(not(feature = "microoptimization"))]
-#[path="safe_primitives.rs"]
-mod primitives;
-
-/// A wrapper-type that always hold a single `T` value.
+/// A wrapper-type that always holds a single `T` value.
 ///
 /// This type is implemented using an `Option<T>`, however outside of the `borrow_result` function,
-/// this Option will always contain a value.
+/// this `Option` will always contain a value.
+///
+/// # Panics
+///
+/// If the closure given to `borrow` or `borrow_result` panics, then the `Takeable` is left in an
+/// unusable state without holding a `T`. Calling any method on the object besides `is_usable` when
+/// in this state will result in a panic. This includes trying to dereference the object.
+///
+/// It is still safe to drop the value.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Default)]
 pub struct Takeable<T> {
-    // The invariant is that this value should *always* be a Some(value), unless we are inside the
-    // `borrow_result` function.
+    // During normal usage, the invariant is that that this value should *always* be a Some(value),
+    // unless we are inside the `borrow_result` function. However if the closure given the
+    // `borrow_result` panics, then this will no longer be the case.
     value: Option<T>,
 }
 
 impl<T> Takeable<T> {
-    #[inline(always)]
-    fn debug_assert_some(&self) {
-        debug_assert!(self.value.is_some());
-    }
-
     /// Constructs a new `Takeable<T>` value.
     #[inline(always)]
     pub fn new(value: T) -> Takeable<T> {
@@ -74,43 +58,57 @@ impl<T> Takeable<T> {
     /// Gets a reference to the inner value.
     #[inline(always)]
     pub fn as_ref(&self) -> &T {
-        self.debug_assert_some();
-        primitives::unwrap_some(self.value.as_ref())
+        self.value.as_ref().expect(
+            "Takeable is not usable after a panic occurred in borrow or borrow_result",
+        )
     }
 
     /// Gets a mutable reference to the inner value.
     #[inline(always)]
     pub fn as_mut(&mut self) -> &mut T {
-        self.debug_assert_some();
-        primitives::unwrap_some(self.value.as_mut())
+        self.value.as_mut().expect(
+            "Takeable is not usable after a panic occurred in borrow or borrow_result",
+        )
     }
 
     /// Takes ownership of the inner value.
     #[inline(always)]
     pub fn into_inner(self) -> T {
-        self.debug_assert_some();
-        primitives::unwrap_some(self.value)
+        self.value.expect(
+            "Takeable is not usable after a panic occurred in borrow or borrow_result",
+        )
     }
 
     /// Updates the inner value using the provided closure.
     #[inline(always)]
     pub fn borrow<F>(&mut self, f: F)
-        where F: FnOnce(T) -> T
+    where
+        F: FnOnce(T) -> T,
     {
-        self.debug_assert_some();
         self.borrow_result(|v| (f(v), ()))
     }
 
     /// Updates the inner value using the provided closure while also returns a result.
     #[inline(always)]
     pub fn borrow_result<F, R>(&mut self, f: F) -> R
-        where F: FnOnce(T) -> (T, R)
+    where
+        F: FnOnce(T) -> (T, R),
     {
-        self.debug_assert_some();
-        let old = primitives::unwrap_some(self.value.take());
+        let old = self.value.take().expect(
+            "Takeable is not usable after a panic occurred in borrow or borrow_result",
+        );
         let (new, result) = f(old);
-        primitives::write_none(&mut self.value, new);
+        self.value = Some(new);
         result
+    }
+
+    /// Check if the object is still usable.
+    ///
+    /// The object will always start out as usable, and can only enter an unusable state if the
+    /// methods `borrow` or `borrow_result` are called with closures that panic.
+    #[inline(always)]
+    pub fn is_usable(&self) -> bool {
+        self.value.is_some()
     }
 }
 
@@ -144,5 +142,29 @@ mod tests {
         let out = takeable.borrow_result(|n: u32| (n + 1, n));
         assert_eq!(out, 45);
         assert_eq!(takeable.into_inner(), 46);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_usable() {
+        struct MyDrop {
+            value: Takeable<()>,
+            should_be_usable: bool,
+        };
+        impl Drop for MyDrop {
+            fn drop(&mut self) {
+                assert_eq!(self.value.is_usable(), self.should_be_usable);
+            }
+        }
+
+        let _drop1 = MyDrop {
+            value: Takeable::new(()),
+            should_be_usable: true,
+        };
+        let mut drop2 = MyDrop {
+            value: Takeable::new(()),
+            should_be_usable: false,
+        };
+        drop2.value.borrow(|_| panic!());
     }
 }
