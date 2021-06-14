@@ -150,7 +150,7 @@ mod tests {
         struct MyDrop {
             value: Takeable<()>,
             should_be_usable: bool,
-        };
+        }
         impl Drop for MyDrop {
             fn drop(&mut self) {
                 assert_eq!(self.value.is_usable(), self.should_be_usable);
