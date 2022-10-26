@@ -12,20 +12,20 @@
 //!
 //! This crate implements a single wrapper-type `Takeable<T>`. The main purpose of this wrapper
 //! is that it provides two convenient helper functions `borrow` and `borrow_result` that allows for
-//! temporarily moving out of the wrapper without violating safety. One can also permanently move
-//! the value out and invalidate the container, causing it to panic on any future attempts to access
+//! temporarily moving out of the wrapper without violating safety. The value can also be permanently
+//! moved out, invalidating the  container and causing a panic on any future attempts to access
 //! the value.
 //!
 //! The `borrow` and `borrow_result` methods work similarly to [`take`][take] from the [`take_mut`][take_mut]
 //! crate. The main difference is that, while the `take_mut` is implemented using careful handling of
 //! unwind safety, this crate uses an `Option<T>` inside to make unwinding work as expected.
 //!
-//! The `take` method works similarly to `Option::take`, but has the advantage that the object simply
-//! permanently invalidated, and using a `Takeable<T>` instead of an `Option<T>` directly makes it clear
-//! that a value is always expected and avoids the ubiquitous need for dealing a possible `Option::None`
-//! variant in code.
+//! The `take` method works similarly to `Option::take`, but has the advantage that the object becomes
+//! permanently invalidated. Additionally, using a `Takeable<T>` instead of an `Option<T>` makes
+//! it clear in code that a value is always expected and avoids the need to handle possible
+//! `Option::None` variants when accessing the `T`.
 //!
-//! [take]: https://docs.rs/take_mut/0.1.3/take_mut/fn.take.html
+//! [take]: https://docs.rs/take_mut/latest/take_mut/fn.take.html
 //! [take_mut]: https://crates.io/crates/take_mut
 #![no_std]
 #![deny(
@@ -53,9 +53,9 @@ use core::{
 /// If the closure given to `borrow` or `borrow_result` panics, then the `Takeable` is left in an
 /// invalid state without holding a `T`. Calling any method on the object besides `is_usable` when
 /// in this state will result in a panic. This includes trying to dereference the object. The object
-/// will also be permanently invalidated if the value is moved out using `take`.
+/// will also be permanently invalidated if the value is moved out manually using `take`.
 ///
-/// It is still safe to drop the value even when invalidated.
+/// It is still safe to drop the `Takeable` even when invalidated.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Default)]
 pub struct Takeable<T> {
     // During normal usage, the invariant is that that this value should *always* be a Some(value),
@@ -77,24 +77,28 @@ impl<T> Takeable<T> {
 
     /// Gets a reference to the inner value.
     #[inline(always)]
+    #[track_caller]
     pub fn as_ref(&self) -> &T {
         self.value.as_ref().expect(PANIC_MESSAGE)
     }
 
     /// Gets a mutable reference to the inner value.
     #[inline(always)]
+    #[track_caller]
     pub fn as_mut(&mut self) -> &mut T {
         self.value.as_mut().expect(PANIC_MESSAGE)
     }
 
     /// Takes ownership of the inner value.
     #[inline(always)]
+    #[track_caller]
     pub fn into_inner(self) -> T {
         self.value.expect(PANIC_MESSAGE)
     }
 
     /// Updates the inner value using the provided closure.
     #[inline(always)]
+    #[track_caller]
     pub fn borrow<F>(&mut self, f: F)
     where
         F: FnOnce(T) -> T,
@@ -104,6 +108,7 @@ impl<T> Takeable<T> {
 
     /// Updates the inner value using the provided closure, which also returns a result.
     #[inline(always)]
+    #[track_caller]
     pub fn borrow_result<F, R>(&mut self, f: F) -> R
     where
         F: FnOnce(T) -> (T, R),
@@ -119,6 +124,7 @@ impl<T> Takeable<T> {
     /// Subsequent calls to any methods except `is_usable` will panic, including attempts to
     /// deference the object.
     #[inline(always)]
+    #[track_caller]
     pub fn take(&mut self) -> T {
         self.value.take().expect(PANIC_MESSAGE)
     }
@@ -135,6 +141,8 @@ impl<T> Takeable<T> {
 }
 
 impl<T: Display> Display for Takeable<T> {
+    #[inline(always)]
+    #[track_caller]
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{}", self.as_ref())
     }
@@ -143,6 +151,7 @@ impl<T: Display> Display for Takeable<T> {
 impl<T> Deref for Takeable<T> {
     type Target = T;
     #[inline(always)]
+    #[track_caller]
     fn deref(&self) -> &T {
         self.as_ref()
     }
@@ -150,6 +159,7 @@ impl<T> Deref for Takeable<T> {
 
 impl<T> DerefMut for Takeable<T> {
     #[inline(always)]
+    #[track_caller]
     fn deref_mut(&mut self) -> &mut T {
         self.as_mut()
     }
@@ -157,8 +167,6 @@ impl<T> DerefMut for Takeable<T> {
 
 #[cfg(test)]
 mod tests {
-    use core::cell::RefCell;
-
     use super::Takeable;
     #[test]
     fn test_takeable() {
@@ -204,15 +212,4 @@ mod tests {
         let _ = drop3.value.take();
         drop2.value.borrow(|_| panic!());
     }
-
-    /* #[test]
-    fn test_todo() {
-        let mut x = Takeable::new(6);
-        let y = x.take();
-        //let x = x.take();
-
-        let x = RefCell::new(5);
-        let y = x.borrow_mut();
-        let z = x.borrow();
-    } */
 }
