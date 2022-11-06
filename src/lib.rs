@@ -10,23 +10,24 @@
 
 //! Crate for temporarily or permanently moving out of a mutable pointer.
 //!
-//! This crate implements a single wrapper-type `Takeable<T>`. The main purpose of this wrapper
-//! is that it provides two convenient helper functions `borrow` and `borrow_result` that allows for
-//! temporarily moving out of the wrapper without violating safety. The value can also be permanently
+//! This crate implements a single wrapper-type [`Takeable<T>`]. The main purpose of this wrapper
+//! is that it provides two convenient helper functions [`Takeable::borrow`] and [`Takeable::borrow_result`]
+//! that allows for temporarily moving out of the wrapper without violating safety. The value can also be permanently
 //! moved out, invalidating the  container and causing a panic on any future attempts to access
 //! the value.
 //!
-//! The `borrow` and `borrow_result` methods work similarly to [`take`][take] from the [`take_mut`][take_mut]
-//! crate. The main difference is that, while the `take_mut` is implemented using careful handling of
-//! unwind safety, this crate uses an `Option<T>` inside to make unwinding work as expected.
+//! The [`Takeable::borrow`] and [`Takeable::borrow_result`] methods work similarly to
+//! [`take`] from the [`take_mut`] crate. The main difference is that, while the [`take_mut`]
+//! is implemented using careful handling of unwind safety, this crate uses an [`Option<T>`] inside to make
+//! unwinding work as expected.
 //!
-//! The `take` method works similarly to `Option::take`, but has the advantage that the object becomes
-//! permanently invalidated. Additionally, using a `Takeable<T>` instead of an `Option<T>` makes
+//! The [`Takeable::take`] method works similarly to [`Option::take`], but has the advantage that the object becomes
+//! permanently invalidated. Additionally, using a [`Takeable<T>`] instead of an [`Option<T>`] makes
 //! it clear in code that a value is always expected and avoids the need to handle possible
-//! `Option::None` variants when accessing the `T`.
+//! [`Option::None`] variants when accessing the `T`.
 //!
-//! [take]: https://docs.rs/take_mut/latest/take_mut/fn.take.html
-//! [take_mut]: https://crates.io/crates/take_mut
+//! [`take`]: https://docs.rs/take_mut/latest/take_mut/fn.take.html
+//! [`take_mut`]: https://crates.io/crates/take_mut
 #![no_std]
 #![deny(
     missing_docs,
@@ -45,17 +46,17 @@ use core::{
 
 /// A wrapper-type that always holds a single `T` value.
 ///
-/// This type is implemented using an `Option<T>`, however, the wrapper requires the `Option<T>` to
+/// This type is implemented using an [`Option<T>`], however, the wrapper requires the [`Option<T>`] to
 /// always contain a value.
 ///
 /// # Panics
 ///
-/// If the closure given to `borrow` or `borrow_result` panics, then the `Takeable` is left in an
-/// invalid state without holding a `T`. Calling any method on the object besides `is_usable` when
+/// If the closure given to [`borrow`][Self::borrow] or [`borrow_result`][Self::borrow_result] panics, then the `Takeable` is left in an
+/// invalid state without holding a `T`. Calling any method on the object besides [`is_usable`][Self::is_usable] when
 /// in this state will result in a panic. This includes trying to dereference the object. The object
-/// will also be permanently invalidated if the value is moved out manually using `take`.
+/// will also be permanently invalidated if the value is moved out manually using [`take`][Self::take].
 ///
-/// It is still safe to drop the `Takeable` even when invalidated.
+/// It is always safe to drop the `Takeable` even when invalidated.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Default)]
 pub struct Takeable<T> {
     // During normal usage, the invariant is that that this value should *always* be a Some(value),
@@ -69,24 +70,10 @@ pub struct Takeable<T> {
 const PANIC_MESSAGE: &str = "the value has already been removed from the Takeable";
 
 impl<T> Takeable<T> {
-    /// Constructs a new `Takeable<T>` value.
+    /// Constructs a new [`Takeable<T>`] value.
     #[inline(always)]
     pub fn new(value: T) -> Takeable<T> {
         Takeable { value: Some(value) }
-    }
-
-    /// Gets a reference to the inner value.
-    #[inline(always)]
-    #[track_caller]
-    pub fn as_ref(&self) -> &T {
-        self.value.as_ref().expect(PANIC_MESSAGE)
-    }
-
-    /// Gets a mutable reference to the inner value.
-    #[inline(always)]
-    #[track_caller]
-    pub fn as_mut(&mut self) -> &mut T {
-        self.value.as_mut().expect(PANIC_MESSAGE)
     }
 
     /// Takes ownership of the inner value.
@@ -121,7 +108,7 @@ impl<T> Takeable<T> {
 
     /// Moves out the inner value and invalidates the object.
     ///
-    /// Subsequent calls to any methods except `is_usable` will panic, including attempts to
+    /// Subsequent calls to any methods except [`is_usable`][Self::is_usable] will panic, including attempts to
     /// deference the object.
     #[inline(always)]
     #[track_caller]
@@ -132,8 +119,8 @@ impl<T> Takeable<T> {
     /// Check if the object is still usable.
     ///
     /// The object will always start out as usable, and can only enter an unusable state if the
-    /// methods `borrow` or `borrow_result` are called with closures that panic, or if the value
-    /// is explicitly moved out permanently with `take`.
+    /// methods [`borrow`][Self::borrow] or [`borrow_result`][Self::borrow_result] are called with closures that panic, or if the value
+    /// is explicitly moved out permanently with [`take`][Self::take].
     #[inline(always)]
     pub fn is_usable(&self) -> bool {
         self.value.is_some()
@@ -162,6 +149,33 @@ impl<T> DerefMut for Takeable<T> {
     #[track_caller]
     fn deref_mut(&mut self) -> &mut T {
         self.as_mut()
+    }
+}
+
+impl<T> From<T> for Takeable<T> {
+    #[inline(always)]
+    #[track_caller]
+    /// Converts a `T` value into a [`Takeable<T>`].
+    fn from(value: T) -> Self {
+        Self::new(value)
+    }
+}
+
+impl<T> AsRef<T> for Takeable<T> {
+    #[inline(always)]
+    #[track_caller]
+    /// Gets a reference to the underlying value.
+    fn as_ref(&self) -> &T {
+        self.value.as_ref().expect(PANIC_MESSAGE)
+    }
+}
+
+impl<T> AsMut<T> for Takeable<T> {
+    #[inline(always)]
+    #[track_caller]
+    /// Gets a mutable reference to the underlying value.
+    fn as_mut(&mut self) -> &mut T {
+        self.value.as_mut().expect(PANIC_MESSAGE)
     }
 }
 

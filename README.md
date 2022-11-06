@@ -2,7 +2,7 @@
 
 > A simple wrapper type that holds values that need to be moved out from only a mutable reference.
 
-## [Documentation](https://docs.rs/crates/takeable/0.1.0)
+## [Documentation](https://docs.rs/takeable/latest/takeable/)
 
 Sometimes it's useful to be able to move out of a mutable reference
 temporarily or permanently. This often occurs for instance when dealing with state machines
